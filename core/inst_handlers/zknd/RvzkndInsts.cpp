@@ -81,7 +81,8 @@ namespace pegasus
         const XLEN rs1_val = READ_INT_REG<XLEN>(state, inst->getRs1());
         const uint32_t imm = inst->getImmediate();
         const uint32_t rnum = imm & 0xF;
-        if(rnum > 10){
+        if (rnum > 10)
+        {
             THROW_ILLEGAL_INST;
         }
         const XLEN rd_val = OPERATOR{}(rs1_val, 0, imm);
@@ -104,8 +105,8 @@ namespace pegasus
     template Action::ItrType RvzkndInsts::aesIHandler_<RV64, Aes64ImOp<RV64>>(PegasusState*,
                                                                               Action::ItrType);
 
-    template Action::ItrType RvzkndInsts::aesKsiOpHandler_<RV64, Aes64Ks1iOp<RV64>>(PegasusState*,
-                                                                                Action::ItrType);
+    template Action::ItrType
+    RvzkndInsts::aesKsiOpHandler_<RV64, Aes64Ks1iOp<RV64>>(PegasusState*, Action::ItrType);
 
     template Action::ItrType RvzkndInsts::aesRHandler_<RV64, Aes64Ks2Op<RV64>>(PegasusState*,
                                                                                Action::ItrType);

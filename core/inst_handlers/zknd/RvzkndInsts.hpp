@@ -22,7 +22,7 @@ namespace pegasus
         template <typename XLEN, typename OPERATOR> // for R type instruction handling
         Action::ItrType aesRHandler_(PegasusState* state, Action::ItrType action_it);
 
-        template<typename XLEN, typename OPERATOR>
+        template <typename XLEN, typename OPERATOR>
         Action::ItrType aesKsiOpHandler_(PegasusState* state, Action::ItrType action_it);
     };
 

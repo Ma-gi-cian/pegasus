@@ -125,7 +125,7 @@ namespace pegasus
         XLEN operator()(XLEN rs1, XLEN rs2, uint32_t /*imm*/) const
         {
             uint32_t w0 = (rs1 >> 32) ^ (rs2 & 0xFFFFFFFF);
-            uint32_t w1 = (rs1 >> 32) ^ rs2 ^ (rs2 >> 32) ;
+            uint32_t w1 = (rs1 >> 32) ^ rs2 ^ (rs2 >> 32);
             return ((XLEN)w1 << 32) | (XLEN)w0;
         }
     };
