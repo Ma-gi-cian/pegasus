@@ -12,3 +12,4 @@ IDE/backend/__pycache__/**
 IDE/editor/__pycache__/**
 .spike_commit_log
 gen/
+build/
