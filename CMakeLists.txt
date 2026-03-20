@@ -155,6 +155,21 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(spike)
 
+option(BUILD_DEBUGGER "Build the Pegasus CoSim GUI Debugger" OFF)
+
+if(BUILD_DEBUGGER)
+  FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.90.1
+    SOURCE_DIR ${SIM_BASE}/tools/imgui
+  )
+
+  FetchContent_MakeAvailable(imgui)
+
+  add_subdirectory(tools/debugger)
+endif()
+
 ################################################################################
 
 if (PROJECT_IS_TOP_LEVEL)
