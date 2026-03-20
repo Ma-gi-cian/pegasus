@@ -60,6 +60,11 @@ namespace pegasus
             PARAMETER(uint32_t, ilimit, 0, "Instruction limit for stopping simulation")
             PARAMETER(uint32_t, quantum, 500, "Instruction quantum size")
             PARAMETER(bool, stop_sim_on_wfi, false, "Executing a WFI instruction stops simulation")
+            // Typical stack pointer is 8KB on most linux systems
+            PARAMETER(uint32_t, ulimit_stack_size, 8192,
+                      "Typical ulimit stack size for system call emulation")
+
+            // STF Validation
             PARAMETER(std::string, stf_filename, "",
                       "STF Trace file name (when not given, STF tracing is disabled)")
             PARAMETER(std::string, validate_with_stf, "",
@@ -68,9 +73,8 @@ namespace pegasus
                       "STF validation trace file begin instruction number")
             PARAMETER(uint64_t, validate_inst_begin, 1,
                       "STF validation pegasus begin instruction number")
-            // Typical stack pointer is 8KB on most linux systems
-            PARAMETER(uint32_t, ulimit_stack_size, 8192,
-                      "Typical ulimit stack size for system call emulation")
+            PARAMETER(bool, validate_fail_on_first_diff, false,
+                      "STF validation pegasus fail on first difference detected")
 
             // Set by PegasusCore
             HIDDEN_PARAMETER(uint32_t, xlen, 64, "XLEN (either 32 or 64 bit)")
@@ -259,17 +263,18 @@ namespace pegasus
         };
 
         template <typename MemoryType>
-        MemoryType readMemory(const PegasusTranslationState::TranslationResult & result,
-                              const MemAccessSource source = MemAccessSource::INVALID);
+        bool readMemory(const PegasusTranslationState::TranslationResult & result,
+                        std::vector<uint8_t> & buffer,
+                        const MemAccessSource source = MemAccessSource::INVALID);
         template <typename MemoryType>
-        MemoryType readMemory(const Addr paddr,
-                              const MemAccessSource source = MemAccessSource::INVALID);
+        bool readMemory(const Addr paddr, std::vector<uint8_t> & buffer,
+                        const MemAccessSource source = MemAccessSource::INVALID);
         template <typename MemoryType>
-        void writeMemory(const PegasusTranslationState::TranslationResult & result,
+        bool writeMemory(const PegasusTranslationState::TranslationResult & result,
                          const MemoryType value,
                          const MemAccessSource source = MemAccessSource::INVALID);
         template <typename MemoryType>
-        void writeMemory(const Addr paddr, const MemoryType value,
+        bool writeMemory(const Addr paddr, const MemoryType value,
                          const MemAccessSource source = MemAccessSource::INVALID);
 
         void addObserver(std::unique_ptr<Observer> observer);
@@ -312,6 +317,10 @@ namespace pegasus
         // Unregister a WaitOnReservationSet notification.
         void unregisterWaitOnReservationSet();
 
+        bool storeOnReservationSetOccurred() const { return store_on_resvset_; };
+
+        void storeOnReservationSet(bool occurred) { store_on_resvset_ = occurred; }
+
       private:
         void onBindTreeEarly_() override;
         void onBindTreeLate_() override;
@@ -339,6 +348,11 @@ namespace pegasus
         void
         waitOnReservationSet_(const sparta::memory::BlockingMemoryIFNode::PostWriteAccess & data);
 
+        /*!
+         *  \brief Installs register read/write callback functions to specail registers
+         */
+        template <typename XLEN> void addCSRRegisterCallbacks_();
+
         //! Hart ID
         const HartId hart_id_;
 
@@ -360,14 +374,15 @@ namespace pegasus
         //! Stop simulatiion on WFI
         const bool stop_sim_on_wfi_;
 
+        //! Typical stack size for system call emulation
+        const uint64_t ulimit_stack_size_;
+
         // STF Trace Filename
         const std::string stf_filename_;
         const std::string validation_stf_filename_;
-        const uint64_t validate_trace_begin_ = 0x1;
-        const uint64_t validate_inst_begin_ = 0x1;
-
-        //! Typical stack size for system call emulation
-        const uint64_t ulimit_stack_size_;
+        const uint64_t validate_trace_begin_;
+        const uint64_t validate_inst_begin_;
+        const bool validate_fail_on_first_diff_;
 
         //! Current pc
         Addr pc_ = 0x0;
@@ -452,6 +467,9 @@ namespace pegasus
         std::unordered_map<std::string, int> reg_ids_by_name_;
         SimController* sim_controller_ = nullptr;
 
+        // Whether a store has occured on reservation set.
+        bool store_on_resvset_ = false;
+
         // Event friend class for cosim. Allows direct state manipulation
         // during flush (rollback) operations.
         friend class cosim::Event;
@@ -516,7 +534,7 @@ namespace pegasus
     static inline XLEN READ_CSR_REG(PegasusState* state, uint32_t reg_ident)
     {
         static_assert(std::is_same_v<XLEN, RV64> || std::is_same_v<XLEN, RV32>);
-        return state->getCsrRegister(reg_ident)->read<XLEN>();
+        return state->getCsrRegister(reg_ident)->readWithCheck();
     }
 
     template <typename XLEN>
@@ -529,11 +547,11 @@ namespace pegasus
             auto reg = state->getCsrRegister(reg_ident);
             const auto old_value = reg->dmiRead<XLEN>();
             const auto write_val = (old_value & ~mask) | (reg_value & mask);
-            reg->write<XLEN>(write_val);
+            reg->writeWithCheck<XLEN>(write_val);
         }
         else
         {
-            state->getCsrRegister(reg_ident)->write<XLEN>(reg_value);
+            state->getCsrRegister(reg_ident)->writeWithCheck<XLEN>(reg_value);
         }
     }
 
@@ -577,7 +595,7 @@ namespace pegasus
                                        const char* field_name, uint64_t field_value)
     {
         static_assert(std::is_same_v<XLEN, RV64> || std::is_same_v<XLEN, RV32>);
-        XLEN csr_value = READ_CSR_REG<XLEN>(state, reg_ident);
+        XLEN csr_value = PEEK_CSR_REG<XLEN>(state, reg_ident);
 
         const auto & csr_bit_range = pegasus::getCsrBitRange<XLEN>(reg_ident, field_name);
         const XLEN field_lsb = csr_bit_range.first;
@@ -605,7 +623,7 @@ namespace pegasus
                                       const char* field_name, uint64_t field_value)
     {
         static_assert(std::is_same_v<XLEN, RV64> || std::is_same_v<XLEN, RV32>);
-        XLEN csr_value = READ_CSR_REG<XLEN>(state, reg_ident);
+        XLEN csr_value = PEEK_CSR_REG<XLEN>(state, reg_ident);
 
         const auto & csr_bit_range = pegasus::getCsrBitRange<XLEN>(reg_ident, field_name);
         const XLEN field_lsb = csr_bit_range.first;

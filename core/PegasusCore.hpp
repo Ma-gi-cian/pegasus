@@ -20,9 +20,15 @@
 
 template <class InstT, class ExtenT, class InstTypeAllocator, class ExtTypeAllocator> class Mavis;
 
+namespace sparta::memory
+{
+    class BlockingMemoryIF;
+} // namespace sparta::memory
+
 namespace pegasus
 {
     class PegasusSystem;
+    class ReservationMemory;
 
     using MavisType =
         Mavis<PegasusInst, PegasusExtractor, PegasusInstAllocatorWrapper<PegasusInstAllocator>,
@@ -50,6 +56,9 @@ namespace pegasus
             PARAMETER(uint64_t, pause_counter_duration, 256, "Pause counter duration in cycles")
             PARAMETER(uint64_t, wrssto_counter_duration, 256,
                       "WRS.STO pause counter duration in cycles")
+            PARAMETER(std::vector<int>, supported_trap_modes, {0},
+                      "Supported RISC-V trap modes (0: Direct, 1: Vectored)")
+            PARAMETER(bool, misalignment_support, true, "Misalignment Support");
 
             HIDDEN_PARAMETER(bool, cosim_mode, false, "Set by PegasusCoSim");
         };
@@ -73,6 +82,8 @@ namespace pegasus
 
         PegasusSystem* getSystem() const { return system_; }
 
+        sparta::memory::BlockingMemoryIF* getMemory() const { return current_memory_view_; }
+
         SystemCallEmulator* getSystemCallEmulator() const { return system_call_emulator_; }
 
         bool inCoSimMode() const { return cosim_mode_; }
@@ -82,6 +93,12 @@ namespace pegasus
         bool isPrivilegeModeSupported(const PrivMode mode) const
         {
             return supported_priv_modes_.contains(mode);
+        }
+
+        bool isTrapModeSupported(const TrapVectorMode mode) const
+        {
+            const auto & modes = supported_trap_modes_;
+            return std::find(modes.begin(), modes.end(), static_cast<int>(mode)) != modes.end();
         }
 
         uint64_t getXlen() const { return xlen_; }
@@ -94,6 +111,8 @@ namespace pegasus
         bool isExtensionEnabled(std::string ext) const { return extension_manager_.isEnabled(ext); }
 
         bool isCompressionEnabled() const { return extension_manager_.isEnabled("zca"); }
+
+        bool isMisalignmentSupported() const { return misalignment_support_; }
 
         // Is the "H" extension enabled?
         bool hasHypervisor() const { return hypervisor_enabled_; }
@@ -122,19 +141,7 @@ namespace pegasus
 
         using Reservation = sparta::utils::ValidValue<Addr>;
 
-        void makeReservation(HartId hart_id, Addr paddr)
-        {
-
-            for (uint32_t hart_id = 0; hart_id < num_harts_; ++hart_id)
-            {
-                auto & reservation = reservations_.at(hart_id);
-                if (reservation.isValid() && (reservation.getValue() == paddr))
-                {
-                    reservation.clearValid();
-                }
-            }
-            reservations_.at(hart_id) = paddr;
-        }
+        void makeReservation(HartId hart_id, Addr paddr);
 
         Reservation & getReservation(HartId hart_id) { return reservations_.at(hart_id); }
 
@@ -143,13 +150,7 @@ namespace pegasus
             return reservations_.at(hart_id);
         }
 
-        void clearReservations()
-        {
-            for (auto & reservation : reservations_)
-            {
-                reservation.clearValid();
-            }
-        }
+        void clearReservation(HartId hart_id);
 
         const InstHandlers* getInstHandlers() const { return &inst_handlers_; }
 
@@ -234,6 +235,12 @@ namespace pegasus
         const std::vector<std::string> supported_rv64_extensions_;
         const std::vector<std::string> supported_rv32_extensions_;
 
+        // Supported Trap Modes
+        const std::vector<int> supported_trap_modes_;
+
+        // Does the config support address misalignment
+        const bool misalignment_support_;
+
         // Path to Mavis isa JSONs
         const std::string isa_file_path_;
 
@@ -279,5 +286,12 @@ namespace pegasus
 
         // Instruction Actions
         InstHandlers inst_handlers_;
+
+        // Current active BlockingMemoryIF for this core
+        sparta::memory::BlockingMemoryIF* current_memory_view_ = nullptr;
+
+        // ReservationMemory
+        std::unique_ptr<ReservationMemory> reservation_memory_bmi_;
+        ;
     };
 } // namespace pegasus
