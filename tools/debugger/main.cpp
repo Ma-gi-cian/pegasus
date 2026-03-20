@@ -208,9 +208,9 @@ static void advancePipeline(SimState& s, pegasus::cosim::EventAccessor& evt){
 static void initialize(SimState& s)
 {
     if (s.cosim != nullptr) return;
+    if (s.running) return;
     try
     {
-        delete s.cosim;
         s.cosim = new pegasus::cosim::PegasusCoSim(
             s.ilimit, s.file_path, s.params, "pegasus-cosim.db", 100
         );
@@ -232,6 +232,8 @@ static void initialize(SimState& s)
         s.status_msg = std::string("Launch failed: ") + e.what();
         s.error_occured = true;
         s.running    = false;
+        delete s.cosim;
+        s.cosim = nullptr;
     }
 }
 
@@ -465,7 +467,7 @@ static void drawEventLog(SimState& s, float x, float y, float W, float H)
             ImGui::TableSetupColumn("Disasm", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
 
-            for (auto it = s.pipeline.rbegin(); it != s.pipeline.rend(); ++it)
+            for (auto it = s.logs.rbegin(); it != s.logs.rend(); ++it)
             {
                 const auto& e = *it;
                 ImGui::TableNextRow();
