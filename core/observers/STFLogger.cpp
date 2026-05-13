@@ -391,6 +391,15 @@ namespace pegasus
         else
         {
             opcode = state->getSimState()->current_opcode;
+            uint32_t last_two_bits = opcode & 0b11;
+            if (last_two_bits == 0b11)
+            {
+                opcode_size = 4;
+            }
+            else
+            {
+                opcode_size = 2;
+            }
         }
 
         if (opcode_size == 2)
